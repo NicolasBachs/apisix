@@ -32,7 +32,7 @@ local schema = {
         key = {
             type = "string",
             enum = {"remote_addr", "server_addr", "http_x_real_ip",
-                    "http_x_forwarded_for"},
+                    "http_x_forwarded_for", "header"},
         },
         rejected_code = {type = "integer", minimum = 200, maximum = 600,
                          default = 503},
@@ -47,6 +47,9 @@ local schema = {
             type = "integer", minimum = 1
         },
         redis_password = {
+            type = "string", minLength = 0
+        },
+        header = {
             type = "string", minLength = 0
         },
         redis_timeout = {
@@ -85,6 +88,12 @@ function _M.check_schema(conf)
         conf.redis_timeout = conf.redis_timeout or 1000
     end
 
+    if conf.key == "header" then
+        if not conf.header then
+            return false, "missing header name"
+        end
+    end
+
     return true
 end
 
@@ -115,7 +124,15 @@ function _M.access(conf, ctx)
         return 500
     end
 
-    local key = (ctx.var[conf.key] or "") .. ctx.conf_type .. ctx.conf_version
+    local key
+    if conf.key == "header" then
+        key = core.request.header(ctx, conf.header)
+        if not key then
+            return 401, {error_msg = "Missing header ".. conf.header .." in request"}
+        end
+    else
+        key = (ctx.var[conf.key] or "") .. ctx.conf_type .. ctx.conf_version
+    end
     core.log.info("limit key: ", key)
 
     local delay, remaining = lim:incoming(key, true)
